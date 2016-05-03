@@ -1,0 +1,189 @@
+<% content_for :javascript do %>
+  <script type="text/javascript">
+    ShopifyApp.ready(function(){
+      ShopifyApp.Bar.initialize({
+        title: "Home",
+        icon: "<%= asset_path('favicon.ico') %>"
+      });
+    });
+  </script>
+<% end %>
+
+<nav class="navbar navbar-light bg-faded">
+  <a class="navbar-brand" href="#">P&amp;L Report</a>
+  <ul class="nav navbar-nav">
+    <li class="nav-item active">
+      <a class="nav-link" href="#">Dashboard <span class="sr-only">(current)</span></a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#">Graphs</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#">Orders</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#">Settings</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#">About</a>
+    </li>
+  </ul>
+  <form class="form-inline pull-xs-right">
+    <input class="form-control" type="text" size="40" placeholder="Product / Customer / Orders...">
+    <button class="btn btn-success-outline" type="submit">Search</button>
+  </form>
+</nav>
+
+<%=
+total_pending = total_paid = total_refunded = 0
+
+@all_orders = ShopifyAPI::Order.all
+@all_orders.each do |order|
+  case order.financial_status
+    when 'pending', 'authorized'
+      total_pending += 1
+    when 'paid'
+      total_paid += 1
+    when 'refunded'
+      total_refunded += 1
+  end
+end
+
+data = { "Pending " => total_pending, "Paid" => total_paid, "Refunded" => total_refunded }
+
+pie_chart(data)
+
+%>
+
+<div class="panel panel-default">
+ <div class="panel-heading"><h2>Products</h2></div>
+ <div class="panel-body">
+   <div class="card-deck">
+
+      <% @products.each do |product| %>
+        <div class="card">
+
+          <div class="card-header">
+              <%= product.title %>
+          </div>
+
+          <%
+             #Get the Image
+             @image = ShopifyAPI::Image.find(:all, :params => {:product_id => product.id})
+             @price = @returns = @profit = 0
+          %>
+
+          <% @image.each do |img| %>
+            <img class="img-circle" src="<%= img.src %>" alt="<%= product.title %>'s product image'"  width="100" height="100" style="margin-top: -50px; float: right; background-size: 90px 0;" />
+          <% end %>
+
+          <div class="card-block" style="float: left; width: 80%;">
+
+            <%
+            # Extract product price
+            product.variants.each do |variant|
+               @price = variant.price.to_i
+               @stock = variant.inventory_quantity
+            end
+
+            # Look through orders for product
+            total_sold = total_paid = total_refunded = 0
+
+            @transactions = ShopifyAPI::Order.find(:all)
+
+            @transactions.each do |transaction|
+              transaction.line_items.each do |line_item|
+                if line_item.product_id == product.id
+                   case transaction.financial_status
+                     when 'pending', 'authorized'
+                       total_sold += 1
+                     when 'paid'
+                       total_paid += 1
+                     when 'refunded'
+                       total_refunded += 1
+                   end
+                end
+
+              end
+             end
+
+             #Calculate Profit
+             @profit = total_sold * @price
+            %>
+
+            <ul class="list-group list-group-flush">
+              <li class="list-group-item">In Stock: <%= @stock %></li>
+              <li class="list-group-item">Price: <%= @price %></li>
+              <li class="list-group-item text-success">Profit: <%= @profit %></li>
+              <li class="list-group-item">Sold: <%= total_sold %></li>
+              <li class="list-group-item">Returned: <%= total_refunded %></li>
+            </ul>
+
+          </div>
+        </div>
+
+      <% end %>
+    </div>
+
+</div>
+
+
+
+<div class="panel panel-default">
+ <div class="panel-heading">
+
+   <h2 class="panel-title">Orders</h2>
+
+   <div class="dropdown">
+    <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+      View options
+      <span class="caret"></span>
+    </button>
+    <ul class="dropdown-menu" aria-labelledby="dropdownMenu1">
+      <li><a href="#">Today</a></li>
+      <li><a href="#">Last week</a></li>
+      <li><a href="#">Last month</a></li>
+      <li role="separator" class="divider"></li>
+      <li><a href="#">Specify dates</a></li>
+    </ul>
+  </div>
+
+ </div>
+ <div class="panel-body">
+
+    <table class="table">
+      <thead>
+        <tr>
+          <td>Order ID</td>
+          <td>Customer</td>
+          <td>Details</td>
+          <td>Value</td>
+          <td>Status</td>
+        </tr>
+      </thead>
+      <% @orders.each do |order| %>
+        <tr>
+          <td><a href="#">#<%= order.id %></a></td>
+          <td><a href="#"><%= order.billing_address.first_name %> <%= order.billing_address.last_name %></a></td>
+          <td><%= order.line_items.count %> Items:
+            <ul>
+            <% order.line_items.each do |item| %>
+                <li><a href="#"><%= item.name %></a> (<%= item.price %>)</li>
+            <% end %>
+            </ul>
+          </td>
+
+          <% @transactions = ShopifyAPI::Transaction.find(:all, :params => {:order_id => order.id}) %>
+          <td>
+            <% @transactions.each do |action| %>
+              <%= action.amount %> (<%= action.currency %>)
+            <% end %>
+          </td>
+
+          <td><%= order.financial_status.capitalize %></td>
+        </tr>
+      <% end %>
+    </table>
+
+  </div>
+</div>
